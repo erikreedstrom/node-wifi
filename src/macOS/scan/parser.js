@@ -23,8 +23,13 @@ const parse = stdout => {
     .flat()
     .filter(({ _name }) => _name.startsWith('en'))
     .map(
-      ({ spairport_airport_other_local_wireless_networks }) =>
-        spairport_airport_other_local_wireless_networks
+      ({
+        spairport_airport_other_local_wireless_networks,
+        spairport_airport_local_wireless_networks
+      }) => [
+        ...(spairport_airport_other_local_wireless_networks || []),
+        ...(spairport_airport_local_wireless_networks || [])
+      ]
     )
     .flat()
     .map(

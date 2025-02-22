@@ -33,6 +33,8 @@ const parse = stdout => {
         spairport_current_network_information,
         spairport_wireless_mac_address
       }) => {
+        if (!spairport_current_network_information) return null;
+
         const {
           _name,
           spairport_network_channel,
