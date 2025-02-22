@@ -6,7 +6,7 @@ const log = filename => path.resolve(__dirname, '../__logs__/', filename);
 
 describe('parse macOS get current connections output', () => {
   it('should return current wifi networks', async () => {
-    const output = await unlog(log('current-connections-01.log'));
+    const output = await unlog(log('current-connections-02.log'));
 
     const connections = parse(output);
 
@@ -14,12 +14,12 @@ describe('parse macOS get current connections output', () => {
       {
         mac: '31:23:03:1a:9f:1d',
         bssid: '31:23:03:1a:9f:1d',
-        ssid: 'Linksys01227_5GHz',
-        channel: '36,80',
-        frequency: 5180,
-        quality: 100,
-        signal_level: -50,
-        security: 'wpa2-psk',
+        ssid: '612-scaglietti',
+        channel: 40,
+        frequency: 5200,
+        quality: 68,
+        signal_level: -66,
+        security: 'WPA2 Personal',
         security_flags: []
       }
     ]);

@@ -1,73 +1,61 @@
 const { percentageFromDB } = require('../../utils/percentage-db');
 const frequencyFromChannel = require('../../utils/frequency-from-channel');
 
-const isNotEmpty = line => line.trim() !== '';
-
-const parseSecurity = security => {
-  const securities =
-    security === 'NONE'
-      ? [{ protocole: 'NONE', flag: '' }]
-      : security
-          .split(' ')
-          .map(s => s.match(/(.*)\((.*)\)/))
-          .filter(Boolean)
-          .map(([, protocole, flag]) => ({
-            protocole,
-            flag
-          }));
-
-  return {
-    security: securities.map(s => s.protocole).join(' '),
-    security_flags: securities.filter(s => s.flag).map(s => `(${s.flag})`)
-  };
-};
+const formatSecurity = security =>
+  security
+    .replace(/^spairport_security_mode_/, '')
+    .replace(/_/g, ' ')
+    .replace(/wep/g, 'WEP')
+    .replace(/wpa/g, 'WPA')
+    .replace(/personal/g, 'Personal')
+    .replace(/enterprise/g, 'Enterprise')
+    .replace(/WPA3 transition/g, 'WPA2/WPA3 Personal')
+    .replace(/mixed/g, 'Mixed')
+    .replace(/none/g, 'Open');
 
 const parse = stdout => {
-  const lines = stdout.split('\n');
+  const json = JSON.parse(stdout);
+  if (!json.SPAirPortDataType) return [];
 
-  const [, ...otherLines] = lines;
+  return json.SPAirPortDataType.map(
+    ({ spairport_airport_interfaces }) => spairport_airport_interfaces
+  )
+    .flat()
+    .filter(({ _name }) => _name.startsWith('en'))
+    .map(
+      ({ spairport_airport_other_local_wireless_networks }) =>
+        spairport_airport_other_local_wireless_networks
+    )
+    .flat()
+    .map(
+      ({
+        _name,
+        spairport_network_channel,
+        spairport_security_mode,
+        spairport_signal_noise
+      }) => {
+        const { signal, _noise } =
+          /(?<signal>-?\d+\s)dBm\s\/\s(?<noise>-?\d+\s)dBm/.exec(
+            spairport_signal_noise
+          ).groups;
 
-  const networks = otherLines
-    .filter(isNotEmpty)
-    .map(line => line.trim())
-    .map(line => {
-      const match = line.match(
-        /(.*)\s+([a-zA-Z0-9]{2}:[a-zA-Z0-9]{2}:[a-zA-Z0-9]{2}:[a-zA-Z0-9]{2}:[a-zA-Z0-9]{2}:[a-zA-Z0-9]{2}|)\s+(-[0-9]+)\s+([0-9]+).*\s+([A-Z]+)\s+([a-zA-Z-]+)\s+([A-Z0-9(,)\s/]+)/
-      );
+        const signalLevel = parseInt(signal);
 
-      if (match) {
-        const [
-          ,
-          ssid,
-          bssid,
-          rssi,
-          channelStr,
-          // eslint-disable-next-line no-unused-vars
-          ht,
-          // eslint-disable-next-line no-unused-vars
-          countryCode,
-          security
-        ] = match;
-
-        const channel = parseInt(channelStr);
+        const { channel } = /(?<channel>\d+)\s\(.+\)/.exec(
+          spairport_network_channel
+        ).groups;
 
         return {
-          mac: bssid, // for retrocompatibility
-          bssid,
-          ssid: ssid.trim(),
-          channel,
+          ssid: _name,
+          channel: parseInt(channel),
           frequency: frequencyFromChannel(channel),
-          signal_level: rssi,
-          quality: percentageFromDB(rssi),
-          ...parseSecurity(security)
+          signal_level: signalLevel,
+          quality: percentageFromDB(signalLevel),
+          security: formatSecurity(spairport_security_mode),
+          security_flags: []
         };
       }
-
-      return false;
-    })
-    .filter(Boolean);
-
-  return networks;
+    );
 };
 
 module.exports = parse;

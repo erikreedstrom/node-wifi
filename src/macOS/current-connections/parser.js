@@ -1,61 +1,71 @@
 const { percentageFromDB } = require('../../utils/percentage-db');
 const frequencyFromChannel = require('../../utils/frequency-from-channel');
 
-const agrCtlRSSIRegex = /[ ]*agrCtlRSSI: (.*)/;
-const BSSIDRegex = /[ ]*BSSID: ([0-9A-Fa-f:]*)/;
-const SSIDRegex = /[ ]*SSID: (.*)/;
-const securityRegex = /[ ]*link auth: (.*)/;
-const channelRegex = /[ ]*channel: (.*)/;
-
 const formatMacAddress = mac =>
   mac
     .split(':')
     .map(part => (part.length === 1 ? `0${part}` : part))
     .join(':');
 
+const formatSecurity = security =>
+  security
+    .replace(/^spairport_security_mode_/, '')
+    .replace(/_/g, ' ')
+    .replace(/wep/g, 'WEP')
+    .replace(/wpa/g, 'WPA')
+    .replace(/personal/g, 'Personal')
+    .replace(/enterprise/g, 'Enterprise')
+    .replace(/WPA3 transition/g, 'WPA2/WPA3 Personal')
+    .replace(/mixed/g, 'Mixed')
+    .replace(/none/g, 'Open');
+
 const parse = stdout => {
-  const lines = stdout.split('\n');
+  const json = JSON.parse(stdout);
+  if (!json.SPAirPortDataType) return [];
 
-  const connections = [];
-  let connection = {};
-  lines.forEach(line => {
-    const matchAgrCtlRSSI = line.match(agrCtlRSSIRegex);
-    if (matchAgrCtlRSSI) {
-      connection.signal_level = parseInt(matchAgrCtlRSSI[1]);
-      connection.quality = percentageFromDB(connection.signal_level);
-      return;
-    }
+  return json.SPAirPortDataType.map(
+    ({ spairport_airport_interfaces }) => spairport_airport_interfaces
+  )
+    .flat()
+    .filter(({ _name }) => _name.startsWith('en'))
+    .map(
+      ({
+        spairport_current_network_information,
+        spairport_wireless_mac_address
+      }) => {
+        const {
+          _name,
+          spairport_network_channel,
+          spairport_security_mode,
+          spairport_signal_noise
+        } = spairport_current_network_information;
 
-    const matchBSSID = line.match(BSSIDRegex);
-    if (matchBSSID) {
-      connection.bssid = formatMacAddress(matchBSSID[1]);
-      connection.mac = connection.bssid; // for retrocompatibility
-      return;
-    }
+        const { signal, _noise } =
+          /(?<signal>-?\d+\s)dBm\s\/\s(?<noise>-?\d+\s)dBm/.exec(
+            spairport_signal_noise
+          ).groups;
 
-    const matchSSID = line.match(SSIDRegex);
-    if (matchSSID) {
-      connection.ssid = matchSSID[1];
-      return;
-    }
+        const signalLevel = parseInt(signal);
 
-    const matchSecurity = line.match(securityRegex);
-    if (matchSecurity) {
-      connection.security = matchSecurity[1];
-      connection.security_flags = [];
-      return;
-    }
+        const { channel } = /(?<channel>\d+)\s\(.+\)/.exec(
+          spairport_network_channel
+        ).groups;
 
-    const matchChannel = line.match(channelRegex);
-    if (matchChannel) {
-      connection.channel = matchChannel[1];
-      connection.frequency = frequencyFromChannel(connection.channel);
-      connections.push(connection);
-      connection = {};
-    }
-  });
+        const mac = formatMacAddress(spairport_wireless_mac_address);
 
-  return connections;
+        return {
+          mac,
+          bssid: mac,
+          ssid: _name,
+          channel: parseInt(channel),
+          frequency: frequencyFromChannel(channel),
+          quality: percentageFromDB(signalLevel),
+          signal_level: signalLevel,
+          security: formatSecurity(spairport_security_mode),
+          security_flags: []
+        };
+      }
+    );
 };
 
 module.exports = parse;
